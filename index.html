@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Robeats Game</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #111;
+      color: white;
+      margin: 0;
+      text-align: center;
+      overflow: hidden;
+    }
+    #game-container {
+      margin-top: 20px;
+      display: flex;
+      justify-content: space-evenly;
+      align-items: flex-end;
+      height: 80vh;
+      position: relative;
+    }
+    .note {
+      width: 60px;
+      height: 60px;
+      background: #1abc9c;
+      border-radius: 50%;
+      position: absolute;
+    }
+    .lane {
+      width: 60px;
+      height: 100%;
+      border: 2px solid white;
+      position: relative;
+    }
+    .hit-zone {
+      width: 100%;
+      height: 80px;
+      background: rgba(255, 255, 255, 0.2);
+      position: absolute;
+      bottom: 0;
+    }
+    #controls {
+      margin-top: 20px;
+    }
+    button {
+      padding: 10px 20px;
+      background: #1abc9c;
+      border: none;
+      border-radius: 5px;
+      color: white;
+      cursor: pointer;
+      font-size: 16px;
+    }
+    button:hover {
+      background: #16a085;
+    }
+  </style>
+</head>
+<body>
+  <h1>Robeats Game</h1>
+  <p>Press Q, W, O, or P to hit the notes!</p>
+  <input type="file" id="file-input" accept="audio/*" />
+  <div id="game-container">
+    <div class="lane" id="lane-q">
+      <div class="hit-zone"></div>
+    </div>
+    <div class="lane" id="lane-w">
+      <div class="hit-zone"></div>
+    </div>
+    <div class="lane" id="lane-o">
+      <div class="hit-zone"></div>
+    </div>
+    <div class="lane" id="lane-p">
+      <div class="hit-zone"></div>
+    </div>
+  </div>
+  <div id="controls">
+    <button onclick="startGame()">Start Game</button>
+  </div>
+
+  <script>
+    const lanes = {
+      q: document.getElementById('lane-q'),
+      w: document.getElementById('lane-w'),
+      o: document.getElementById('lane-o'),
+      p: document.getElementById('lane-p'),
+    };
+    const keys = ['q', 'w', 'o', 'p'];
+    const notes = [];
+    let audioContext;
+    let audioBuffer;
+
+    // Load the MP3 file and analyze peaks
+    document.getElementById('file-input').addEventListener('change', async (event) => {
+      const file = event.target.files[0];
+      if (file) {
+        const arrayBuffer = await file.arrayBuffer();
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+        analyzePeaks(audioBuffer);
+      }
+    });
+
+    // Analyze peaks in the audio file
+    function analyzePeaks(buffer) {
+      const rawData = buffer.getChannelData(0); // Get the left channel
+      const sampleRate = buffer.sampleRate;
+      const blockSize = sampleRate / 10; // Analyze in 0.1s chunks
+      const peaks = [];
+
+      for (let i = 0; i < rawData.length; i += blockSize) {
+        let max = 0;
+        for (let j = 0; j < blockSize; j++) {
+          max = Math.max(max, Math.abs(rawData[i + j]));
+        }
+        peaks.push(max);
+      }
+
+      generateNotes(peaks);
+    }
+
+    // Generate notes based on peaks
+    function generateNotes(peaks) {
+      notes.length = 0; // Clear existing notes
+      const threshold = 0.3; // Adjust as needed
+
+      peaks.forEach((peak, index) => {
+        if (peak > threshold) {
+          const lane = keys[Math.floor(Math.random() * keys.length)];
+          notes.push({
+            lane,
+            time: index * 100, // Timing in ms
+          });
+        }
+      });
+
+      console.log('Notes generated:', notes);
+    }
+
+    // Start the game
+    function startGame() {
+      if (!audioBuffer) {
+        alert('Please load an audio file first!');
+        return;
+      }
+
+      const startTime = Date.now();
+      const interval = setInterval(() => {
+        const currentTime = Date.now() - startTime;
+
+        // Spawn notes
+        notes.forEach((note, index) => {
+          if (note.time <= currentTime && !note.spawned) {
+            note.spawned = true;
+            spawnNote(note.lane);
+          }
+        });
+
+        // Stop the interval when all notes are spawned
+        if (notes.every((note) => note.spawned)) {
+          clearInterval(interval);
+        }
+      }, 10);
+
+      // Play the audio
+      const source = audioContext.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(audioContext.destination);
+      source.start(0);
+    }
+
+    // Spawn a note in a specific lane
+    function spawnNote(laneKey) {
+      const lane = lanes[laneKey];
+      if (!lane) return;
+
+      const note = document.createElement('div');
+      note.classList.add('note');
+      lane.appendChild(note);
+
+      let position = 0;
+      const fallInterval = setInterval(() => {
+        position += 2;
+        note.style.bottom = position + 'px';
+
+        // Remove note when it reaches the bottom
+        if (position > lane.offsetHeight) {
+          clearInterval(fallInterval);
+          lane.removeChild(note);
+        }
+      }, 16);
+    }
+
+    // Handle key presses
+    document.addEventListener('keydown', (event) => {
+      const key = event.key.toLowerCase();
+      if (keys.includes(key)) {
+        const lane = lanes[key];
+        const notesInLane = lane.getElementsByClassName('note');
+        if (notesInLane.length > 0) {
+          // Remove the first note in the lane
+          const note = notesInLane[0];
+          lane.removeChild(note);
+          console.log('Hit note in lane:', key);
+        }
+      }
+    });
+  </script>
+</body>
+</html>

@@ -3,24 +3,30 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Robeats Game</title>
+  <title>ONBeats Rhythm Game</title>
   <style>
     body {
       font-family: Arial, sans-serif;
       background: #111;
       color: white;
       margin: 0;
-      text-align: center;
       overflow: hidden;
+      text-align: center;
+    }
+
+    h1 {
+      margin-top: 10px;
+      font-size: 32px;
     }
 
     #game-container {
+      position: relative;
+      width: 100%;
+      height: 80vh;
+      margin: 0 auto;
+      background: #222;
       display: flex;
       justify-content: space-evenly;
-      align-items: flex-end;
-      height: 80vh;
-      position: relative;
-      margin-top: 20px;
     }
 
     .lane {
@@ -28,37 +34,55 @@
       width: 80px;
       height: 100%;
       background: rgba(255, 255, 255, 0.1);
-      border: 2px solid white;
+      border: 2px solid #fff;
+      overflow: hidden;
     }
 
     .note {
+      position: absolute;
       width: 60px;
       height: 60px;
       background: #3498db;
-      position: absolute;
       border-radius: 5px;
+      left: 50%;
+      transform: translateX(-50%);
     }
 
     .hit-zone {
-      width: 80px;
-      height: 60px;
-      background: #1abc9c;
-      border-radius: 50%;
       position: absolute;
-      bottom: 0;
+      bottom: 10px;
+      width: 80px;
+      height: 20px;
+      background: #1abc9c;
       left: 50%;
       transform: translateX(-50%);
     }
 
     #score {
-      margin-top: 20px;
       font-size: 24px;
+      margin-top: 10px;
+    }
+
+    #start-button {
+      margin-top: 20px;
+      padding: 10px 20px;
+      font-size: 18px;
+      color: #fff;
+      background: #3498db;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+
+    #start-button:hover {
+      background: #1abc9c;
     }
   </style>
 </head>
 <body>
-  <h1>Robeats Game</h1>
-  <p>Hit the falling notes when they reach the circle using Q, W, O, or P!</p>
+  <h1>ONBeats Rhythm Game</h1>
+  <div id="score">Score: 0</div>
+  <button id="start-button">Start Game</button>
   <div id="game-container">
     <div class="lane" id="lane-q">
       <div class="hit-zone"></div>
@@ -73,7 +97,6 @@
       <div class="hit-zone"></div>
     </div>
   </div>
-  <div id="score">Score: 0</div>
   <script>
     const lanes = {
       q: document.getElementById('lane-q'),
@@ -81,28 +104,35 @@
       o: document.getElementById('lane-o'),
       p: document.getElementById('lane-p'),
     };
+
     const keys = ['q', 'w', 'o', 'p'];
     const notes = [];
     let score = 0;
     let audioContext;
     let audioBuffer;
+    let gameStarted = false;
 
-    // Load MP3 from the repository
-    window.onload = async () => {
-      const response = await fetch('song.mp3'); // Assumes the MP3 file is in the same repo
+    // Initialize the game when the "Start Game" button is clicked
+    document.getElementById('start-button').addEventListener('click', async () => {
+      if (gameStarted) return;
+      gameStarted = true;
+      document.getElementById('start-button').style.display = 'none';
+
+      // Load and decode audio
+      const response = await fetch('song.mp3'); // Ensure song.mp3 is in the same directory
       const arrayBuffer = await response.arrayBuffer();
       audioContext = new (window.AudioContext || window.webkitAudioContext)();
       audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
 
       analyzePeaks(audioBuffer);
       startGame();
-    };
+    });
 
-    // Analyze peaks in the audio
+    // Analyze peaks in the audio file
     function analyzePeaks(buffer) {
-      const rawData = buffer.getChannelData(0);
+      const rawData = buffer.getChannelData(0); // Use the first channel of the audio
       const sampleRate = buffer.sampleRate;
-      const blockSize = sampleRate / 10; // 0.1s chunks
+      const blockSize = sampleRate / 10; // Analyze in 0.1s chunks
       const peaks = [];
 
       for (let i = 0; i < rawData.length; i += blockSize) {
@@ -116,10 +146,11 @@
       generateNotes(peaks);
     }
 
-    // Generate notes based on peaks
+    // Generate notes based on audio peaks
     function generateNotes(peaks) {
-      const threshold = 0.2;
+      const threshold = 0.3; // Minimum peak intensity to generate a note
       const spawnTimeGap = 300; // 300ms between spawns
+
       peaks.forEach((peak, index) => {
         if (peak > threshold) {
           notes.push({
@@ -130,13 +161,13 @@
       });
     }
 
-    // Start the game
+    // Start the game loop
     function startGame() {
       const startTime = Date.now();
       const interval = setInterval(() => {
         const currentTime = Date.now() - startTime;
 
-        // Spawn notes
+        // Spawn notes at the appropriate time
         notes.forEach((note, index) => {
           if (note.time <= currentTime && !note.spawned) {
             note.spawned = true;
@@ -144,13 +175,13 @@
           }
         });
 
-        // Stop the game if all notes have been spawned
+        // Stop the game when all notes are spawned
         if (notes.every((note) => note.spawned)) {
           clearInterval(interval);
         }
       }, 10);
 
-      // Play the audio
+      // Play the audio file
       const source = audioContext.createBufferSource();
       source.buffer = audioBuffer;
       source.connect(audioContext.destination);
@@ -166,41 +197,35 @@
       note.classList.add('note');
       lane.appendChild(note);
 
-      let position = lane.offsetHeight;
+      let position = 0;
       const fallInterval = setInterval(() => {
-        position -= 4;
-        note.style.bottom = position + 'px';
+        position += 4; // Speed of the note
+        note.style.top = position + 'px';
 
-        // Remove note if it goes past the hit-zone
-        if (position <= 0) {
+        // Check for hit or miss
+        const hitZone = lane.querySelector('.hit-zone');
+        const hitZoneRect = hitZone.getBoundingClientRect();
+        const noteRect = note.getBoundingClientRect();
+
+        if (noteRect.bottom > hitZoneRect.top && noteRect.top < hitZoneRect.bottom) {
+          document.addEventListener('keydown', (event) => {
+            if (event.key.toLowerCase() === laneKey) {
+              lane.removeChild(note);
+              updateScore(10); // Perfect hit
+              clearInterval(fallInterval);
+            }
+          });
+        } else if (position > lane.offsetHeight) {
           clearInterval(fallInterval);
           if (lane.contains(note)) {
             lane.removeChild(note);
-            updateScore(-5); // Penalize for missing a note
+            updateScore(-5); // Missed note
           }
         }
       }, 16);
     }
 
-    // Handle key presses
-    document.addEventListener('keydown', (event) => {
-      const key = event.key.toLowerCase();
-      if (keys.includes(key)) {
-        const lane = lanes[key];
-        const notesInLane = lane.getElementsByClassName('note');
-        if (notesInLane.length > 0) {
-          const note = notesInLane[0];
-          const noteBottom = parseInt(note.style.bottom, 10);
-          if (noteBottom >= 0 && noteBottom <= 80) {
-            // Perfect hit
-            lane.removeChild(note);
-            updateScore(10);
-          }
-        }
-      }
-    });
-
-    // Update score
+    // Update the score
     function updateScore(amount) {
       score += amount;
       document.getElementById('score').innerText = `Score: ${score}`;

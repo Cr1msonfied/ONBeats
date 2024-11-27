@@ -13,55 +13,52 @@
       text-align: center;
       overflow: hidden;
     }
+
     #game-container {
-      margin-top: 20px;
       display: flex;
       justify-content: space-evenly;
       align-items: flex-end;
       height: 80vh;
       position: relative;
+      margin-top: 20px;
     }
+
+    .lane {
+      position: relative;
+      width: 80px;
+      height: 100%;
+      background: rgba(255, 255, 255, 0.1);
+      border: 2px solid white;
+    }
+
     .note {
       width: 60px;
+      height: 60px;
+      background: #3498db;
+      position: absolute;
+      border-radius: 5px;
+    }
+
+    .hit-zone {
+      width: 80px;
       height: 60px;
       background: #1abc9c;
       border-radius: 50%;
       position: absolute;
-    }
-    .lane {
-      width: 60px;
-      height: 100%;
-      border: 2px solid white;
-      position: relative;
-    }
-    .hit-zone {
-      width: 100%;
-      height: 80px;
-      background: rgba(255, 255, 255, 0.2);
-      position: absolute;
       bottom: 0;
+      left: 50%;
+      transform: translateX(-50%);
     }
-    #controls {
+
+    #score {
       margin-top: 20px;
-    }
-    button {
-      padding: 10px 20px;
-      background: #1abc9c;
-      border: none;
-      border-radius: 5px;
-      color: white;
-      cursor: pointer;
-      font-size: 16px;
-    }
-    button:hover {
-      background: #16a085;
+      font-size: 24px;
     }
   </style>
 </head>
 <body>
   <h1>Robeats Game</h1>
-  <p>Press Q, W, O, or P to hit the notes!</p>
-  <input type="file" id="file-input" accept="audio/*" />
+  <p>Hit the falling notes when they reach the circle using Q, W, O, or P!</p>
   <div id="game-container">
     <div class="lane" id="lane-q">
       <div class="hit-zone"></div>
@@ -76,10 +73,7 @@
       <div class="hit-zone"></div>
     </div>
   </div>
-  <div id="controls">
-    <button onclick="startGame()">Start Game</button>
-  </div>
-
+  <div id="score">Score: 0</div>
   <script>
     const lanes = {
       q: document.getElementById('lane-q'),
@@ -89,26 +83,26 @@
     };
     const keys = ['q', 'w', 'o', 'p'];
     const notes = [];
+    let score = 0;
     let audioContext;
     let audioBuffer;
 
-    // Load the MP3 file and analyze peaks
-    document.getElementById('file-input').addEventListener('change', async (event) => {
-      const file = event.target.files[0];
-      if (file) {
-        const arrayBuffer = await file.arrayBuffer();
-        audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+    // Load MP3 from the repository
+    window.onload = async () => {
+      const response = await fetch('song.mp3'); // Assumes the MP3 file is in the same repo
+      const arrayBuffer = await response.arrayBuffer();
+      audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
 
-        analyzePeaks(audioBuffer);
-      }
-    });
+      analyzePeaks(audioBuffer);
+      startGame();
+    };
 
-    // Analyze peaks in the audio file
+    // Analyze peaks in the audio
     function analyzePeaks(buffer) {
-      const rawData = buffer.getChannelData(0); // Get the left channel
+      const rawData = buffer.getChannelData(0);
       const sampleRate = buffer.sampleRate;
-      const blockSize = sampleRate / 10; // Analyze in 0.1s chunks
+      const blockSize = sampleRate / 10; // 0.1s chunks
       const peaks = [];
 
       for (let i = 0; i < rawData.length; i += blockSize) {
@@ -124,29 +118,20 @@
 
     // Generate notes based on peaks
     function generateNotes(peaks) {
-      notes.length = 0; // Clear existing notes
-      const threshold = 0.3; // Adjust as needed
-
+      const threshold = 0.2;
+      const spawnTimeGap = 300; // 300ms between spawns
       peaks.forEach((peak, index) => {
         if (peak > threshold) {
-          const lane = keys[Math.floor(Math.random() * keys.length)];
           notes.push({
-            lane,
-            time: index * 100, // Timing in ms
+            lane: keys[Math.floor(Math.random() * keys.length)],
+            time: index * spawnTimeGap,
           });
         }
       });
-
-      console.log('Notes generated:', notes);
     }
 
     // Start the game
     function startGame() {
-      if (!audioBuffer) {
-        alert('Please load an audio file first!');
-        return;
-      }
-
       const startTime = Date.now();
       const interval = setInterval(() => {
         const currentTime = Date.now() - startTime;
@@ -159,7 +144,7 @@
           }
         });
 
-        // Stop the interval when all notes are spawned
+        // Stop the game if all notes have been spawned
         if (notes.every((note) => note.spawned)) {
           clearInterval(interval);
         }
@@ -172,7 +157,7 @@
       source.start(0);
     }
 
-    // Spawn a note in a specific lane
+    // Spawn a note in a lane
     function spawnNote(laneKey) {
       const lane = lanes[laneKey];
       if (!lane) return;
@@ -181,15 +166,18 @@
       note.classList.add('note');
       lane.appendChild(note);
 
-      let position = 0;
+      let position = lane.offsetHeight;
       const fallInterval = setInterval(() => {
-        position += 2;
+        position -= 4;
         note.style.bottom = position + 'px';
 
-        // Remove note when it reaches the bottom
-        if (position > lane.offsetHeight) {
+        // Remove note if it goes past the hit-zone
+        if (position <= 0) {
           clearInterval(fallInterval);
-          lane.removeChild(note);
+          if (lane.contains(note)) {
+            lane.removeChild(note);
+            updateScore(-5); // Penalize for missing a note
+          }
         }
       }, 16);
     }
@@ -201,13 +189,22 @@
         const lane = lanes[key];
         const notesInLane = lane.getElementsByClassName('note');
         if (notesInLane.length > 0) {
-          // Remove the first note in the lane
           const note = notesInLane[0];
-          lane.removeChild(note);
-          console.log('Hit note in lane:', key);
+          const noteBottom = parseInt(note.style.bottom, 10);
+          if (noteBottom >= 0 && noteBottom <= 80) {
+            // Perfect hit
+            lane.removeChild(note);
+            updateScore(10);
+          }
         }
       }
     });
+
+    // Update score
+    function updateScore(amount) {
+      score += amount;
+      document.getElementById('score').innerText = `Score: ${score}`;
+    }
   </script>
 </body>
 </html>
